@@ -1,40 +1,196 @@
-import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, space } from '../../theme/theme';
+import { HeaderHeightContext } from '@react-navigation/elements';
+import { useContext, type ReactNode, type Ref } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useThemedStyles } from '../../theme/ThemeProvider';
+import { layout, space, type Theme } from '../../theme/theme';
+import { Text } from './AppText';
 
+type Edge = 'top' | 'bottom';
+
+/**
+ * Content padding shared by scroll and list screens: a consistent gutter,
+ * safe-area aware, and centred with a max width on tablets.
+ */
+export function useScreenContentStyle(edges: readonly Edge[], hasFooter = false): ViewStyle {
+  const insets = useSafeAreaInsets();
+  return {
+    flexGrow: 1,
+    width: '100%',
+    maxWidth: layout.maxContentWidth,
+    alignSelf: 'center',
+    paddingHorizontal: layout.gutter,
+    paddingTop: (edges.includes('top') ? insets.top : 0) + space[4],
+    paddingBottom:
+      space[8] + (edges.includes('bottom') && !hasFooter ? insets.bottom : 0),
+  };
+}
+
+/**
+ * Screen scaffold. Tab screens (no native header) pass `edges={['top']}`;
+ * stack screens keep the default bottom edge. `footer` pins a primary action
+ * above the home indicator and keyboard.
+ */
 export function Screen({
   children,
   scroll = true,
+  edges = ['bottom'],
+  footer,
+  keyboard = false,
+  gap = space[6],
+  contentStyle,
+  scrollRef,
 }: {
   children: ReactNode;
   scroll?: boolean;
+  edges?: readonly Edge[];
+  footer?: ReactNode;
+  keyboard?: boolean;
+  gap?: number;
+  contentStyle?: StyleProp<ViewStyle>;
+  scrollRef?: Ref<ScrollView>;
 }) {
-  if (!scroll) {
-    return (
-      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-        <View style={styles.body}>{children}</View>
-      </SafeAreaView>
-    );
-  }
+  const styles = useThemedStyles(createStyles);
+  const headerHeight = useContext(HeaderHeightContext) ?? 0;
+  const contentContainerStyle = useScreenContentStyle(edges, Boolean(footer));
+
+  const body = scroll ? (
+    <ScrollView
+      ref={scrollRef}
+      style={styles.fill}
+      contentContainerStyle={[contentContainerStyle, { gap }, contentStyle]}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      showsVerticalScrollIndicator={false}
+    >
+      {children}
+    </ScrollView>
+  ) : (
+    <View style={[styles.fill, contentStyle]}>{children}</View>
+  );
+
+  const content = (
+    <>
+      {body}
+      {footer ? <StickyFooter bottomInset={edges.includes('bottom')}>{footer}</StickyFooter> : null}
+    </>
+  );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-        {children}
-      </ScrollView>
-    </SafeAreaView>
+    <View style={styles.root}>
+      {keyboard ? (
+        <KeyboardAvoidingView
+          style={styles.fill}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={headerHeight}
+        >
+          {content}
+        </KeyboardAvoidingView>
+      ) : (
+        content
+      )}
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  body: {
-    flexGrow: 1,
-    padding: space.lg,
-    gap: space.md,
-  },
-});
+export function StickyFooter({
+  children,
+  bottomInset = true,
+}: {
+  children: ReactNode;
+  bottomInset?: boolean;
+}) {
+  const styles = useThemedStyles(createStyles);
+  const insets = useSafeAreaInsets();
+  return (
+    <View
+      style={[
+        styles.footer,
+        { paddingBottom: bottomInset ? Math.max(insets.bottom, space[4]) : space[4] },
+      ]}
+    >
+      <View style={styles.footerInner}>{children}</View>
+    </View>
+  );
+}
+
+/** Large in-content title used by tab screens, in place of a native header. */
+export function ScreenHeader({
+  eyebrow,
+  title,
+  subtitle,
+  trailing,
+}: {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  trailing?: ReactNode;
+}) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View style={styles.header}>
+      <View style={styles.headerText}>
+        {eyebrow ? (
+          <Text variant="label" tone="secondary">
+            {eyebrow}
+          </Text>
+        ) : null}
+        <Text variant="h1" numberOfLines={2}>
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text variant="bodySmall" tone="secondary">
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      {trailing ? <View style={styles.headerTrailing}>{trailing}</View> : null}
+    </View>
+  );
+}
+
+function createStyles({ colors }: Theme) {
+  return StyleSheet.create({
+    root: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    fill: {
+      flex: 1,
+    },
+    footer: {
+      paddingTop: space[3],
+      paddingHorizontal: layout.gutter,
+      backgroundColor: colors.background,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    footerInner: {
+      width: '100%',
+      maxWidth: layout.maxContentWidth - layout.gutter * 2,
+      alignSelf: 'center',
+      gap: space[3],
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: space[3],
+      paddingTop: space[2],
+    },
+    headerText: {
+      flex: 1,
+      gap: space[1],
+    },
+    headerTrailing: {
+      paddingBottom: 2,
+    },
+  });
+}

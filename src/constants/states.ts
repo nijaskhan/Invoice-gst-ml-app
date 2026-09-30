@@ -18,3 +18,10 @@ export function stateLabel(code: string | null | undefined): string {
   const match = GST_STATE_CODES.find((state) => state.code === code);
   return match ? `${match.name} (${code})` : code;
 }
+
+/** Options for pickers; the description lets people search by GST state code. */
+export const GST_STATE_OPTIONS = GST_STATE_CODES.map((state) => ({
+  value: state.code as string,
+  label: state.name as string,
+  description: `State code ${state.code}`,
+}));

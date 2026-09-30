@@ -1,12 +1,16 @@
 import { migrate } from 'drizzle-orm/expo-sqlite/migrator';
 import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { Text } from '../components/common/AppText';
+import { Icon } from '../components/common/Icon';
+import { ErrorState } from '../components/common/States';
 import { createDb, type AppDatabase } from '../database/client';
 import migrations from '../database/migrations/migrations';
 import { createRepositories, type Repositories } from '../database/repositories';
 import { seedIfEmpty } from '../database/seed';
-import { colors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeProvider';
+import { radius, space } from '../theme/theme';
 import { errorMessage } from '../utils/errors';
 import { logger } from '../utils/logger';
 
@@ -46,11 +50,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   if (error) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: colors.bg }}>
-        <Text style={{ color: colors.danger, fontSize: 16 }}>{error}</Text>
-      </View>
-    );
+    return <DatabaseError message={error} />;
   }
 
   return (
@@ -72,14 +72,59 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function DatabaseFallback() {
-  useEffect(() => {
-    // reserved for suspense fallback
-  }, []);
+function DatabaseError({ message }: { message: string }) {
+  const { colors } = useTheme();
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg }}>
-      <ActivityIndicator color={colors.primary} size="large" />
-      <Text style={{ marginTop: 12, color: colors.muted }}>Opening local ledger…</Text>
+    <View style={[styles.centre, { backgroundColor: colors.background }]}>
+      <ErrorState
+        title="Couldn't open your ledger"
+        message={`Close and reopen the app to try again.\n\nDetails: ${message}`}
+      />
     </View>
   );
 }
+
+/** Branded launch state while the local database opens and migrates. */
+export function DatabaseFallback() {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={[styles.centre, { backgroundColor: colors.background }]}
+      accessibilityLabel="Opening your ledger"
+    >
+      <View style={[styles.mark, { backgroundColor: colors.hero }]}>
+        <Icon name="receipt-outline" size={30} color={colors.onHero} />
+      </View>
+      <Text variant="h3">GST Invoice</Text>
+      <View style={styles.status}>
+        <ActivityIndicator color={colors.textSecondary} size="small" />
+        <Text variant="bodySmall" tone="secondary">
+          Opening your ledger…
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  centre: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: space[3],
+    padding: space[6],
+  },
+  mark: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.large + 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: space[1],
+  },
+  status: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+  },
+});

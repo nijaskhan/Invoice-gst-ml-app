@@ -1,22 +1,49 @@
-import { customerFormSchema } from '@invoice-gst/validation';
+import type { CustomerType } from '@invoice-gst/types';
+import { customerFormSchema, type CustomerFormValues } from '@invoice-gst/validation';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
-import type { RootStackParamList } from '../../navigation/types';
-import { useDatabase } from '../../providers/DatabaseProvider';
-import { Body } from '../../components/common/AppText';
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, View, type TextInput } from 'react-native';
+import { Text } from '../../components/common/AppText';
 import { Button } from '../../components/common/Button';
 import { Screen } from '../../components/common/Screen';
+import { Section } from '../../components/common/Section';
+import { SegmentedControl } from '../../components/common/SegmentedControl';
+import { SelectField } from '../../components/common/SelectField';
 import { TextField } from '../../components/common/TextField';
-import { GST_STATE_CODES } from '../../constants/states';
-import { colors, radius, space } from '../../theme/theme';
+import { useToast } from '../../components/common/Toast';
+import { GST_STATE_OPTIONS } from '../../constants/states';
+import type { RootStackParamList } from '../../navigation/types';
+import { useDatabase } from '../../providers/DatabaseProvider';
+import { space } from '../../theme/theme';
 import { errorMessage } from '../../utils/errors';
+import { issuesToFieldErrors, useFieldErrors } from '../../utils/formErrors';
+import { haptics } from '../../utils/haptics';
+
+const TYPE_SEGMENTS: readonly { value: CustomerType; label: string }[] = [
+  { value: 'b2c', label: 'Consumer' },
+  { value: 'b2b', label: 'Business' },
+  { value: 'unregistered', label: 'Unregistered' },
+];
+
+const TYPE_HINT: Record<CustomerType, string> = {
+  b2c: 'An individual buyer (B2C).',
+  b2b: 'A GST-registered business (B2B). Add their GSTIN below.',
+  unregistered: 'A business without GST registration.',
+};
+
+const STATE_OPTIONS = [
+  { value: '', label: 'Same as shop', description: 'Intra-state: CGST + SGST' },
+  ...GST_STATE_OPTIONS,
+];
+
+type Field = keyof CustomerFormValues;
 
 export function CustomerFormScreen({
   navigation,
   route,
 }: NativeStackScreenProps<RootStackParamList, 'CustomerForm'>) {
   const { repos } = useDatabase();
+  const toast = useToast();
   const customerId = route.params.customerId;
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -26,8 +53,14 @@ export function CustomerFormScreen({
   const [stateCode, setStateCode] = useState('');
   const [pincode, setPincode] = useState('');
   const [gstin, setGstin] = useState('');
-  const [customerType, setCustomerType] = useState<'b2c' | 'b2b' | 'unregistered'>('b2c');
+  const [customerType, setCustomerType] = useState<CustomerType>('b2c');
   const [saving, setSaving] = useState(false);
+  const { errors, setErrors, clear } = useFieldErrors<Field>();
+
+  const phoneRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const cityRef = useRef<TextInput>(null);
+  const pincodeRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (!customerId) {
@@ -62,9 +95,12 @@ export function CustomerFormScreen({
       customerType,
     });
     if (!parsed.success) {
-      Alert.alert('Check customer', parsed.error.issues[0]?.message ?? 'Invalid customer');
+      setErrors(issuesToFieldErrors<Field>(parsed.error.issues));
+      haptics.error();
+      toast.error('Check the highlighted fields');
       return;
     }
+    setErrors({});
     setSaving(true);
     try {
       const values = {
@@ -83,43 +119,171 @@ export function CustomerFormScreen({
       } else {
         await repos.customers.create(values);
       }
+      haptics.success();
+      toast.success(customerId ? 'Customer updated' : `${values.name} saved`);
       navigation.goBack();
     } catch (error) {
-      Alert.alert('Could not save', errorMessage(error));
+      toast.error(`Couldn't save. ${errorMessage(error)}`);
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Screen>
-      <TextField label="Name" value={name} onChangeText={setName} />
-      <TextField label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-      <TextField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" />
-      <TextField label="Address" value={addressLine1} onChangeText={setAddressLine1} />
-      <TextField label="City" value={city} onChangeText={setCity} />
-      <TextField label="PIN" value={pincode} onChangeText={setPincode} keyboardType="number-pad" />
-      <TextField label="GSTIN" value={gstin} onChangeText={setGstin} />
-      <Body>State</Body>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-        {GST_STATE_CODES.map((state) => (
-          <Pressable
-            key={state.code}
-            onPress={() => setStateCode(state.code)}
-            style={{
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              borderRadius: radius.sm,
-              backgroundColor: stateCode === state.code ? colors.primary : colors.chip,
-            }}
-          >
-            <Text style={{ color: stateCode === state.code ? colors.primaryText : colors.ink }}>
-              {state.name}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-      <Button label={customerId ? 'Update customer' : 'Save customer'} onPress={() => void onSave()} loading={saving} />
+    <Screen
+      keyboard
+      footer={
+        <Button
+          label={customerId ? 'Save changes' : 'Save customer'}
+          onPress={() => void onSave()}
+          loading={saving}
+          size="large"
+        />
+      }
+    >
+      <Section title="Customer">
+        <TextField
+          label="Name"
+          value={name}
+          onChangeText={(value) => {
+            setName(value);
+            clear('name');
+          }}
+          error={errors.name}
+          placeholder="Person or business name"
+          autoCapitalize="words"
+          autoComplete="name"
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => phoneRef.current?.focus()}
+        />
+        <View style={styles.fieldGroup}>
+          <Text variant="label">Type</Text>
+          <SegmentedControl
+            accessibilityLabel="Customer type"
+            segments={TYPE_SEGMENTS}
+            value={customerType}
+            onChange={setCustomerType}
+          />
+          <Text variant="caption" tone="secondary">
+            {TYPE_HINT[customerType]}
+          </Text>
+        </View>
+      </Section>
+
+      <Section title="Contact">
+        <TextField
+          ref={phoneRef}
+          label="Phone"
+          optional
+          value={phone}
+          onChangeText={setPhone}
+          error={errors.phone}
+          keyboardType="phone-pad"
+          autoComplete="tel"
+          textContentType="telephoneNumber"
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => emailRef.current?.focus()}
+        />
+        <TextField
+          ref={emailRef}
+          label="Email"
+          optional
+          value={email}
+          onChangeText={(value) => {
+            setEmail(value);
+            clear('email');
+          }}
+          error={errors.email}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoComplete="email"
+          textContentType="emailAddress"
+        />
+      </Section>
+
+      <Section title="Tax" description="Decides whether CGST + SGST or IGST applies.">
+        <TextField
+          label="GSTIN"
+          optional
+          value={gstin}
+          onChangeText={(value) => {
+            setGstin(value.toUpperCase());
+            clear('gstin');
+          }}
+          error={errors.gstin}
+          placeholder="15 characters, e.g. 32ABCDE1234F1Z5"
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={15}
+        />
+        <SelectField
+          label="State"
+          sheetTitle="Customer's state"
+          value={stateCode}
+          options={STATE_OPTIONS}
+          onChange={(value) => {
+            setStateCode(value);
+            clear('stateCode');
+          }}
+          error={errors.stateCode}
+          hint={stateCode ? undefined : 'Leave as shop state for local buyers.'}
+        />
+      </Section>
+
+      <Section title="Address">
+        <TextField
+          label="Street address"
+          optional
+          value={addressLine1}
+          onChangeText={setAddressLine1}
+          error={errors.addressLine1}
+          autoComplete="street-address"
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => cityRef.current?.focus()}
+        />
+        <View style={styles.row}>
+          <TextField
+            ref={cityRef}
+            label="City"
+            optional
+            value={city}
+            onChangeText={setCity}
+            error={errors.city}
+            containerStyle={styles.rowField}
+            returnKeyType="next"
+            submitBehavior="submit"
+            onSubmitEditing={() => pincodeRef.current?.focus()}
+          />
+          <TextField
+            ref={pincodeRef}
+            label="PIN"
+            optional
+            value={pincode}
+            onChangeText={setPincode}
+            error={errors.pincode}
+            keyboardType="number-pad"
+            autoComplete="postal-code"
+            maxLength={6}
+            containerStyle={styles.rowField}
+          />
+        </View>
+      </Section>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  fieldGroup: {
+    gap: space[2],
+  },
+  row: {
+    flexDirection: 'row',
+    gap: space[3],
+  },
+  rowField: {
+    flex: 1,
+  },
+});

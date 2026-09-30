@@ -1,70 +1,134 @@
-import { vendorFormSchema } from '@invoice-gst/validation';
-import { useEffect, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
-import { useDatabase } from '../../providers/DatabaseProvider';
-import { Body, Title } from '../../components/common/AppText';
+import { formatInvoiceNumber, getFinancialYear } from '@invoice-gst/shared';
+import type { GstRegistrationType } from '@invoice-gst/types';
+import { vendorFormSchema, type VendorFormValues } from '@invoice-gst/validation';
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, View, type TextInput } from 'react-native';
+import { Text } from '../../components/common/AppText';
 import { Button } from '../../components/common/Button';
-import { Screen } from '../../components/common/Screen';
+import { Card } from '../../components/common/Card';
+import { Icon } from '../../components/common/Icon';
+import { Screen, ScreenHeader } from '../../components/common/Screen';
+import { Section } from '../../components/common/Section';
+import { SegmentedControl } from '../../components/common/SegmentedControl';
+import { SelectField } from '../../components/common/SelectField';
 import { TextField } from '../../components/common/TextField';
-import { GST_STATE_CODES } from '../../constants/states';
-import { colors, radius, space } from '../../theme/theme';
+import { useToast } from '../../components/common/Toast';
+import { GST_STATE_OPTIONS } from '../../constants/states';
+import { useDatabase } from '../../providers/DatabaseProvider';
+import { useTheme, useThemedStyles, type ThemePreference } from '../../theme/ThemeProvider';
+import { radius, space, type Theme } from '../../theme/theme';
 import { errorMessage } from '../../utils/errors';
+import { issuesToFieldErrors, useFieldErrors } from '../../utils/formErrors';
+import { haptics } from '../../utils/haptics';
+
+type ProfileValues = {
+  businessName: string;
+  tradeName: string;
+  gstin: string;
+  phone: string;
+  email: string;
+  addressLine1: string;
+  city: string;
+  stateCode: string;
+  pincode: string;
+  invoicePrefix: string;
+  gstRegistrationType: GstRegistrationType;
+};
+
+const EMPTY_PROFILE: ProfileValues = {
+  businessName: '',
+  tradeName: '',
+  gstin: '',
+  phone: '',
+  email: '',
+  addressLine1: '',
+  city: '',
+  stateCode: '32',
+  pincode: '',
+  invoicePrefix: 'INV',
+  gstRegistrationType: 'regular',
+};
+
+const REGISTRATION_SEGMENTS: readonly { value: GstRegistrationType; label: string }[] = [
+  { value: 'regular', label: 'Regular' },
+  { value: 'composition', label: 'Composition' },
+  { value: 'unregistered', label: 'Unregistered' },
+];
+
+const REGISTRATION_HINT: Record<GstRegistrationType, string> = {
+  regular: 'You charge GST on each invoice and claim input credit.',
+  composition: 'You pay tax at a flat rate; no GST is charged on invoices.',
+  unregistered: 'You are not registered for GST.',
+};
+
+const THEME_SEGMENTS: readonly { value: ThemePreference; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+];
+
+type Field = keyof VendorFormValues;
 
 export function VendorSettingsScreen() {
   const { repos } = useDatabase();
-  const [businessName, setBusinessName] = useState('');
-  const [tradeName, setTradeName] = useState('');
-  const [gstin, setGstin] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [addressLine1, setAddressLine1] = useState('');
-  const [city, setCity] = useState('');
-  const [stateCode, setStateCode] = useState('32');
-  const [pincode, setPincode] = useState('');
-  const [invoicePrefix, setInvoicePrefix] = useState('INV');
-  const [gstRegistrationType, setGstRegistrationType] = useState<
-    'regular' | 'composition' | 'unregistered'
-  >('regular');
+  const toast = useToast();
+  const { preference, setPreference } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const [values, setValues] = useState<ProfileValues>(EMPTY_PROFILE);
+  const [saved, setSaved] = useState<ProfileValues>(EMPTY_PROFILE);
   const [saving, setSaving] = useState(false);
+  const { errors, setErrors, clear } = useFieldErrors<Field>();
+
+  const tradeNameRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const cityRef = useRef<TextInput>(null);
+  const pincodeRef = useRef<TextInput>(null);
 
   useEffect(() => {
     void repos.vendors.get().then((vendor) => {
       if (!vendor) {
         return;
       }
-      setBusinessName(vendor.businessName);
-      setTradeName(vendor.tradeName ?? '');
-      setGstin(vendor.gstin ?? '');
-      setPhone(vendor.phone ?? '');
-      setEmail(vendor.email ?? '');
-      setAddressLine1(vendor.addressLine1 ?? '');
-      setCity(vendor.city ?? '');
-      setStateCode(vendor.stateCode);
-      setPincode(vendor.pincode ?? '');
-      setInvoicePrefix(vendor.invoicePrefix);
-      setGstRegistrationType(vendor.gstRegistrationType);
+      const loaded: ProfileValues = {
+        businessName: vendor.businessName,
+        tradeName: vendor.tradeName ?? '',
+        gstin: vendor.gstin ?? '',
+        phone: vendor.phone ?? '',
+        email: vendor.email ?? '',
+        addressLine1: vendor.addressLine1 ?? '',
+        city: vendor.city ?? '',
+        stateCode: vendor.stateCode,
+        pincode: vendor.pincode ?? '',
+        invoicePrefix: vendor.invoicePrefix,
+        gstRegistrationType: vendor.gstRegistrationType,
+      };
+      setValues(loaded);
+      setSaved(loaded);
     });
   }, [repos]);
 
+  const dirty = (Object.keys(values) as (keyof ProfileValues)[]).some(
+    (key) => values[key] !== saved[key],
+  );
+
+  function update<K extends keyof ProfileValues>(key: K, value: ProfileValues[K]) {
+    setValues((current) => ({ ...current, [key]: value }));
+    clear(key);
+  }
+
   async function onSave() {
     const parsed = vendorFormSchema.safeParse({
-      businessName,
-      tradeName,
-      gstin,
-      phone,
-      email,
-      addressLine1,
+      ...values,
       addressLine2: '',
-      city,
-      stateCode,
-      pincode,
-      gstRegistrationType,
-      invoicePrefix,
     });
     if (!parsed.success) {
-      Alert.alert('Check shop profile', parsed.error.issues[0]?.message ?? 'Invalid profile');
+      setErrors(issuesToFieldErrors<Field>(parsed.error.issues));
+      haptics.error();
+      toast.error('Check the highlighted fields');
       return;
     }
+    setErrors({});
     setSaving(true);
     try {
       await repos.vendors.upsert({
@@ -81,65 +145,243 @@ export function VendorSettingsScreen() {
         gstRegistrationType: parsed.data.gstRegistrationType,
         invoicePrefix: parsed.data.invoicePrefix.toUpperCase(),
       });
-      Alert.alert('Saved', 'Shop profile updated on this device.');
+      const normalised = { ...values, invoicePrefix: values.invoicePrefix.toUpperCase() };
+      setValues(normalised);
+      setSaved(normalised);
+      haptics.success();
+      toast.success('Shop profile saved on this device');
     } catch (error) {
-      Alert.alert('Could not save', errorMessage(error));
+      toast.error(`Couldn't save. ${errorMessage(error)}`);
     } finally {
       setSaving(false);
     }
   }
 
+  const prefixPreview = /^[A-Za-z0-9]{1,12}$/.test(values.invoicePrefix.trim())
+    ? formatInvoiceNumber(values.invoicePrefix.trim().toUpperCase(), getFinancialYear(), 1)
+    : null;
+
   return (
-    <Screen>
-      <Title>Shop profile</Title>
-      <TextField label="Business name" value={businessName} onChangeText={setBusinessName} />
-      <TextField label="Trade name" value={tradeName} onChangeText={setTradeName} />
-      <TextField label="GSTIN" value={gstin} onChangeText={setGstin} />
-      <TextField label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-      <TextField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" />
-      <TextField label="Address" value={addressLine1} onChangeText={setAddressLine1} />
-      <TextField label="City" value={city} onChangeText={setCity} />
-      <TextField label="PIN" value={pincode} onChangeText={setPincode} keyboardType="number-pad" />
-      <TextField label="Invoice prefix" value={invoicePrefix} onChangeText={setInvoicePrefix} />
-      <Body>State</Body>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-        {GST_STATE_CODES.map((state) => (
-          <Pressable
-            key={state.code}
-            onPress={() => setStateCode(state.code)}
-            style={{
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              borderRadius: radius.sm,
-              backgroundColor: stateCode === state.code ? colors.primary : colors.chip,
-            }}
-          >
-            <Text style={{ color: stateCode === state.code ? colors.primaryText : colors.ink }}>
-              {state.name}
+    <Screen
+      edges={['top']}
+      keyboard
+      footer={
+        dirty ? (
+          <Button label="Save changes" onPress={() => void onSave()} loading={saving} size="large" />
+        ) : undefined
+      }
+    >
+      <ScreenHeader title="Shop" subtitle="Your business details appear on every invoice." />
+
+      <Section title="Business">
+        <TextField
+          label="Business name"
+          value={values.businessName}
+          onChangeText={(value) => update('businessName', value)}
+          error={errors.businessName}
+          hint="Your legal name, as registered for GST."
+          autoCapitalize="words"
+          autoComplete="organization"
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => tradeNameRef.current?.focus()}
+        />
+        <TextField
+          ref={tradeNameRef}
+          label="Trade name"
+          optional
+          value={values.tradeName}
+          onChangeText={(value) => update('tradeName', value)}
+          error={errors.tradeName}
+          hint="The shop name customers know, if different."
+          autoCapitalize="words"
+        />
+      </Section>
+
+      <Section title="GST">
+        <View style={styles.fieldGroup}>
+          <Text variant="label">Registration</Text>
+          <SegmentedControl
+            accessibilityLabel="GST registration type"
+            segments={REGISTRATION_SEGMENTS}
+            value={values.gstRegistrationType}
+            onChange={(value) => update('gstRegistrationType', value)}
+          />
+          <Text variant="caption" tone="secondary">
+            {REGISTRATION_HINT[values.gstRegistrationType]}
+          </Text>
+        </View>
+        <TextField
+          label="GSTIN"
+          optional
+          value={values.gstin}
+          onChangeText={(value) => update('gstin', value.toUpperCase())}
+          error={errors.gstin}
+          placeholder="15 characters, e.g. 32ABCDE1234F1Z5"
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={15}
+        />
+        <SelectField
+          label="State"
+          sheetTitle="Shop state"
+          value={values.stateCode}
+          options={GST_STATE_OPTIONS}
+          onChange={(value) => update('stateCode', value)}
+          error={errors.stateCode}
+          hint="Sales to other states are billed with IGST."
+        />
+      </Section>
+
+      <Section title="Invoice numbering">
+        <TextField
+          label="Prefix"
+          value={values.invoicePrefix}
+          onChangeText={(value) => update('invoicePrefix', value)}
+          error={errors.invoicePrefix}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={12}
+        />
+        {prefixPreview ? (
+          <View style={styles.preview}>
+            <Icon name="document-text-outline" size="small" tone="textSecondary" />
+            <Text variant="bodySmall" tone="secondary" style={styles.previewText}>
+              Numbers look like{' '}
+              <Text variant="bodySmall" tabular style={styles.previewNumber}>
+                {prefixPreview}
+              </Text>
+              , restarting each financial year.
             </Text>
-          </Pressable>
-        ))}
-      </View>
-      <Body>GST registration</Body>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-        {(['regular', 'composition', 'unregistered'] as const).map((type) => (
-          <Pressable
-            key={type}
-            onPress={() => setGstRegistrationType(type)}
-            style={{
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              borderRadius: radius.sm,
-              backgroundColor: gstRegistrationType === type ? colors.primary : colors.chip,
-            }}
-          >
-            <Text style={{ color: gstRegistrationType === type ? colors.primaryText : colors.ink }}>
-              {type}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-      <Button label="Save profile" onPress={() => void onSave()} loading={saving} />
+          </View>
+        ) : null}
+      </Section>
+
+      <Section title="Contact">
+        <TextField
+          ref={phoneRef}
+          label="Phone"
+          optional
+          value={values.phone}
+          onChangeText={(value) => update('phone', value)}
+          error={errors.phone}
+          keyboardType="phone-pad"
+          autoComplete="tel"
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => emailRef.current?.focus()}
+        />
+        <TextField
+          ref={emailRef}
+          label="Email"
+          optional
+          value={values.email}
+          onChangeText={(value) => update('email', value)}
+          error={errors.email}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoComplete="email"
+        />
+      </Section>
+
+      <Section title="Address">
+        <TextField
+          label="Street address"
+          optional
+          value={values.addressLine1}
+          onChangeText={(value) => update('addressLine1', value)}
+          error={errors.addressLine1}
+          autoComplete="street-address"
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => cityRef.current?.focus()}
+        />
+        <View style={styles.row}>
+          <TextField
+            ref={cityRef}
+            label="City"
+            optional
+            value={values.city}
+            onChangeText={(value) => update('city', value)}
+            error={errors.city}
+            containerStyle={styles.rowField}
+            returnKeyType="next"
+            submitBehavior="submit"
+            onSubmitEditing={() => pincodeRef.current?.focus()}
+          />
+          <TextField
+            ref={pincodeRef}
+            label="PIN"
+            optional
+            value={values.pincode}
+            onChangeText={(value) => update('pincode', value)}
+            error={errors.pincode}
+            keyboardType="number-pad"
+            autoComplete="postal-code"
+            maxLength={6}
+            containerStyle={styles.rowField}
+          />
+        </View>
+      </Section>
+
+      <Section title="Appearance">
+        <SegmentedControl
+          accessibilityLabel="Colour theme"
+          segments={THEME_SEGMENTS}
+          value={preference}
+          onChange={setPreference}
+        />
+        <Text variant="caption" tone="secondary">
+          System follows your phone&apos;s light or dark setting.
+        </Text>
+      </Section>
+
+      <Card variant="filled">
+        <View style={styles.about}>
+          <Icon name="shield-checkmark-outline" tone="primaryText" />
+          <Text variant="bodySmall" tone="secondary" style={styles.aboutText}>
+            Everything is stored on this phone. No account or internet connection is needed to bill.
+          </Text>
+        </View>
+      </Card>
     </Screen>
   );
+}
+
+function createStyles({ colors }: Theme) {
+  return StyleSheet.create({
+    fieldGroup: {
+      gap: space[2],
+    },
+    row: {
+      flexDirection: 'row',
+      gap: space[3],
+    },
+    rowField: {
+      flex: 1,
+    },
+    preview: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space[2],
+      padding: space[3],
+      borderRadius: radius.medium,
+      backgroundColor: colors.surfaceSecondary,
+    },
+    previewText: {
+      flex: 1,
+    },
+    previewNumber: {
+      fontWeight: '600',
+      color: colors.textPrimary,
+    },
+    about: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space[3],
+    },
+    aboutText: {
+      flex: 1,
+    },
+  });
 }
