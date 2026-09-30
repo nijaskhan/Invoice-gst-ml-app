@@ -18,7 +18,7 @@ CREATE TABLE `vendors` (
   `deletedAt` text,
   `syncStatus` text NOT NULL DEFAULT 'pending'
 );
-
+--> statement-breakpoint
 CREATE TABLE `customers` (
   `id` text PRIMARY KEY NOT NULL,
   `name` text NOT NULL,
@@ -35,9 +35,11 @@ CREATE TABLE `customers` (
   `deletedAt` text,
   `syncStatus` text NOT NULL DEFAULT 'pending'
 );
+--> statement-breakpoint
 CREATE INDEX `customers_phone` ON `customers` (`phone`);
+--> statement-breakpoint
 CREATE INDEX `customers_name` ON `customers` (`name`);
-
+--> statement-breakpoint
 CREATE TABLE `products` (
   `id` text PRIMARY KEY NOT NULL,
   `name` text NOT NULL,
@@ -55,10 +57,13 @@ CREATE TABLE `products` (
   `deletedAt` text,
   `syncStatus` text NOT NULL DEFAULT 'pending'
 );
+--> statement-breakpoint
 CREATE INDEX `products_name` ON `products` (`name`);
+--> statement-breakpoint
 CREATE INDEX `products_sku` ON `products` (`sku`);
+--> statement-breakpoint
 CREATE INDEX `products_active` ON `products` (`isActive`);
-
+--> statement-breakpoint
 CREATE TABLE `invoices` (
   `id` text PRIMARY KEY NOT NULL,
   `invoiceNumber` text NOT NULL,
@@ -83,11 +88,15 @@ CREATE TABLE `invoices` (
   `finalizedAt` text,
   `syncStatus` text NOT NULL DEFAULT 'pending'
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX `invoices_number_fy` ON `invoices` (`financialYear`, `invoiceNumber`);
+--> statement-breakpoint
 CREATE INDEX `invoices_createdAt` ON `invoices` (`createdAt`);
+--> statement-breakpoint
 CREATE INDEX `invoices_status` ON `invoices` (`status`);
+--> statement-breakpoint
 CREATE INDEX `invoices_customerId` ON `invoices` (`customerId`);
-
+--> statement-breakpoint
 CREATE TABLE `invoice_items` (
   `id` text PRIMARY KEY NOT NULL,
   `invoiceId` text NOT NULL,
@@ -106,8 +115,9 @@ CREATE TABLE `invoice_items` (
   `igstPaise` integer NOT NULL,
   `lineTotalPaise` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `invoice_items_invoiceId` ON `invoice_items` (`invoiceId`);
-
+--> statement-breakpoint
 CREATE TABLE `payments` (
   `id` text PRIMARY KEY NOT NULL,
   `invoiceId` text NOT NULL,
@@ -119,8 +129,9 @@ CREATE TABLE `payments` (
   `updatedAt` text NOT NULL,
   `syncStatus` text NOT NULL DEFAULT 'pending'
 );
+--> statement-breakpoint
 CREATE INDEX `payments_invoiceId` ON `payments` (`invoiceId`);
-
+--> statement-breakpoint
 CREATE TABLE `gst_configurations` (
   `id` text PRIMARY KEY NOT NULL,
   `vendorId` text NOT NULL,
@@ -132,16 +143,18 @@ CREATE TABLE `gst_configurations` (
   `updatedAt` text NOT NULL,
   `syncStatus` text NOT NULL DEFAULT 'pending'
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX `gst_configurations_vendorId` ON `gst_configurations` (`vendorId`);
-
+--> statement-breakpoint
 CREATE TABLE `invoice_sequences` (
   `id` text PRIMARY KEY NOT NULL,
   `vendorId` text NOT NULL,
   `financialYear` text NOT NULL,
   `nextNumber` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX `invoice_sequences_vendor_fy` ON `invoice_sequences` (`vendorId`, `financialYear`);
-
+--> statement-breakpoint
 CREATE TABLE `sync_queue` (
   `id` text PRIMARY KEY NOT NULL,
   `entityType` text NOT NULL,
@@ -154,10 +167,13 @@ CREATE TABLE `sync_queue` (
   `lastError` text,
   `status` text NOT NULL
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX `sync_queue_idempotencyKey` ON `sync_queue` (`idempotencyKey`);
+--> statement-breakpoint
 CREATE INDEX `sync_queue_status_createdAt` ON `sync_queue` (`status`, `createdAt`);
+--> statement-breakpoint
 CREATE INDEX `sync_queue_entity` ON `sync_queue` (`entityType`, `entityId`);
-
+--> statement-breakpoint
 CREATE TABLE `audit_events` (
   `id` text PRIMARY KEY NOT NULL,
   `entityType` text NOT NULL,
@@ -166,4 +182,5 @@ CREATE TABLE `audit_events` (
   `payload` text,
   `createdAt` text NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `audit_events_entity` ON `audit_events` (`entityType`, `entityId`, `createdAt`);

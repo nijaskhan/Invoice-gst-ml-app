@@ -10,6 +10,7 @@ import { Body, Muted, Title } from '../../components/common/AppText';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { Screen } from '../../components/common/Screen';
+import { shareInvoicePdf } from '../../services/pdf/shareInvoicePdf';
 import { errorMessage } from '../../utils/errors';
 
 export function InvoiceDetailScreen({
@@ -17,6 +18,7 @@ export function InvoiceDetailScreen({
 }: NativeStackScreenProps<RootStackParamList, 'InvoiceDetail'>) {
   const { repos } = useDatabase();
   const [invoice, setInvoice] = useState<InvoiceWithItems | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   const load = useCallback(async () => {
     setInvoice(await repos.invoices.getWithItems(route.params.invoiceId));
@@ -27,6 +29,24 @@ export function InvoiceDetailScreen({
       void load();
     }, [load]),
   );
+
+  async function onShare() {
+    if (!invoice) {
+      return;
+    }
+    setSharing(true);
+    try {
+      const vendor = await repos.vendors.get();
+      if (!vendor) {
+        throw new Error('Save the shop profile before sharing a PDF');
+      }
+      await shareInvoicePdf({ vendor, invoice });
+    } catch (error) {
+      Alert.alert('Could not share PDF', errorMessage(error));
+    } finally {
+      setSharing(false);
+    }
+  }
 
   async function onCancel() {
     try {
@@ -67,6 +87,12 @@ export function InvoiceDetailScreen({
         <Muted>IGST {paiseToRupeeLabel(invoice.igstPaise)}</Muted>
         <Body style={{ fontWeight: '700' }}>Total {paiseToRupeeLabel(invoice.totalPaise)}</Body>
       </Card>
+      <Button
+        label="Share PDF"
+        variant="secondary"
+        onPress={() => void onShare()}
+        loading={sharing}
+      />
       {invoice.status === 'finalized' ? (
         <Button label="Cancel invoice" variant="danger" onPress={() => void onCancel()} />
       ) : null}
