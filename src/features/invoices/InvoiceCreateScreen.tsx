@@ -1,8 +1,11 @@
 import {
+  extractBillingText,
+  matchBillingLine,
   paiseToRupeeLabel,
   quantityMilliToText,
   resolvePlaceOfSupply,
   rupeesTextToPaise,
+  type BillingMatch,
 } from '@invoice-gst/shared';
 import type { Customer, Product } from '@invoice-gst/types';
 import { useNavigation } from '@react-navigation/native';
@@ -61,6 +64,8 @@ export function InvoiceCreateScreen() {
   );
   const [pickerOpen, setPickerOpen] = useState(false);
   const [productQuery, setProductQuery] = useState('');
+  const [billingText, setBillingText] = useState('');
+  const [billingError, setBillingError] = useState<string | null>(null);
 
   const load = useCallback(
     () =>
@@ -98,6 +103,30 @@ export function InvoiceCreateScreen() {
     return needle ? products.filter((product) => matchesProduct(product, needle)) : products;
   }, [products, productQuery]);
   const visibleProducts = filteredProducts.slice(0, CATALOGUE_LIMIT);
+
+  function addFromText() {
+    const extracted = extractBillingText(billingText);
+    if (extracted.length === 0) {
+      setBillingError('Type a product and a quantity. Example: 2 kg rice 100 rupees');
+      return;
+    }
+    const results = extracted.map((line) => matchBillingLine(line, products));
+    let added = 0;
+    const problems: string[] = [];
+    for (const result of results) {
+      if (result.ok) {
+        dispatch(invoiceDraftActions.addBillingLine({ ...result.line, priced: result.priced }));
+        added += 1;
+      } else {
+        problems.push(billingMissMessage(result));
+      }
+    }
+    setBillingError(problems.length > 0 ? problems.join(' ') : null);
+    if (added > 0) {
+      setBillingText('');
+      haptics.light();
+    }
+  }
 
   function selectCustomer(customer: Customer) {
     dispatch(
@@ -219,6 +248,34 @@ export function InvoiceCreateScreen() {
         )}
       </Section>
 
+      <Section
+        title="Add in words"
+        description="The amount is for the whole quantity. Say “at” or “per” when you mean the rate."
+      >
+        <TextField
+          label="Billing line"
+          value={billingText}
+          placeholder="2 kg rice 100 rupees"
+          hint="Uses the product name or alias saved in your catalogue."
+          error={billingError}
+          returnKeyType="done"
+          onChangeText={(value) => {
+            setBillingText(value);
+            if (billingError) {
+              setBillingError(null);
+            }
+          }}
+          onSubmitEditing={addFromText}
+        />
+        <Button
+          label="Add to bill"
+          variant="secondary"
+          icon="add"
+          disabled={billingText.trim().length === 0}
+          onPress={addFromText}
+        />
+      </Section>
+
       <Section title="Add from catalogue" gap={space[3]}>
         {products.length > 6 ? (
           <SearchField
@@ -327,6 +384,16 @@ export function InvoiceCreateScreen() {
       />
     </Screen>
   );
+}
+
+function billingMissMessage(result: Extract<BillingMatch, { ok: false }>): string {
+  if (result.reason === 'ambiguous') {
+    return `“${result.productText}” matches more than one product. Pick it from the catalogue.`;
+  }
+  if (result.reason === 'unit') {
+    return `“${result.productText}” is not sold in that unit.`;
+  }
+  return `No saved product matches “${result.productText}”. Check the name or alias, or pick it from the catalogue.`;
 }
 
 function CartLineRow({

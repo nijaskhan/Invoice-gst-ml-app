@@ -73,6 +73,44 @@ const invoiceDraftSlice = createSlice({
     setCollectPayment(state, action: PayloadAction<boolean>) {
       state.collectPayment = action.payload;
     },
+    addBillingLine(
+      state,
+      action: PayloadAction<{
+        productId: string;
+        productName: string;
+        localName: string | null;
+        hsnCode: string | null;
+        unit: string;
+        quantityMilli: number;
+        unitPricePaise: number;
+        gstRateBps: number;
+        priceInclusive: boolean;
+        priced: boolean;
+      }>,
+    ) {
+      const incoming = action.payload;
+      const existing = state.lines.find((line) => line.productId === incoming.productId);
+      if (existing) {
+        existing.quantityMilli += incoming.quantityMilli;
+        if (incoming.priced) {
+          existing.unitPricePaise = incoming.unitPricePaise;
+        }
+        return;
+      }
+      state.lines.push({
+        key: createId(),
+        productId: incoming.productId,
+        productName: incoming.productName,
+        localName: incoming.localName,
+        hsnCode: incoming.hsnCode,
+        unit: incoming.unit,
+        quantityMilli: incoming.quantityMilli,
+        unitPricePaise: incoming.unitPricePaise,
+        gstRateBps: incoming.gstRateBps,
+        priceInclusive: incoming.priceInclusive,
+        lineDiscountPaise: 0,
+      });
+    },
     addProductLine(state, action: PayloadAction<Product>) {
       const product = action.payload;
       const existing = state.lines.find((line) => line.productId === product.id);

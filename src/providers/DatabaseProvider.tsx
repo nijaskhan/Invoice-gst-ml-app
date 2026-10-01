@@ -1,10 +1,10 @@
-import { migrate } from 'drizzle-orm/expo-sqlite/migrator';
 import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Text } from '../components/common/AppText';
 import { Icon } from '../components/common/Icon';
 import { ErrorState } from '../components/common/States';
+import { applyMigrations } from '../database/applyMigrations';
 import { createDb, type AppDatabase } from '../database/client';
 import migrations from '../database/migrations/migrations';
 import { createRepositories, type Repositories } from '../database/repositories';
@@ -40,8 +40,8 @@ function DatabaseReady({ children }: { children: ReactNode }) {
 
 async function initializeDatabase(sqlite: Parameters<typeof createDb>[0]): Promise<void> {
   await sqlite.execAsync('PRAGMA foreign_keys = ON;');
+  await applyMigrations(sqlite, migrations);
   const db = createDb(sqlite);
-  await migrate(db, migrations);
   await seedIfEmpty(db);
   logger.info('database_ready');
 }
