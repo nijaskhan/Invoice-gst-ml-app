@@ -11,6 +11,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.invoicegst.app",
       "adaptiveIcon": {
         "backgroundColor": "#1F4D3A",
         "foregroundImage": "./assets/android-icon-foreground.png",

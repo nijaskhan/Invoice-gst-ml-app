@@ -81,6 +81,8 @@ function ToastView({ toast, onHidden }: { toast: ToastItem; onHidden: () => void
     <View pointerEvents="box-none" style={[styles.host, { top: insets.top + space[2] }]}>
       <Animated.View
         style={{
+          width: '100%',
+          maxWidth: layout.maxContentWidth - space[8],
           opacity: progress,
           transform: reducedMotion
             ? []
@@ -129,8 +131,6 @@ function createStyles({ colors, elevation }: Theme) {
       alignItems: 'center',
     },
     toast: {
-      width: '100%',
-      maxWidth: layout.maxContentWidth - space[8],
       flexDirection: 'row',
       alignItems: 'center',
       gap: space[3],
